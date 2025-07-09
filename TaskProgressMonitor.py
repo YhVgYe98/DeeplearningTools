@@ -51,10 +51,11 @@ class TaskProgressMonitor:
         self.layout["live_info"].update(Panel("Waiting for first update...", title=self.live_info_title))
         self.layout["static_info"].update(Panel('', title=self.static_info_title))
 
-        self.live = Live(self.layout, screen=True)
+        self.live = Live(self.layout, screen=True, refresh_per_second=10)
         self.overall_task = None
         self.subtask = None
         self._live_started = False
+        self._log_file = None
 
         # 初始化时间记录
         self.start_time = None
@@ -70,27 +71,31 @@ class TaskProgressMonitor:
         self.filedir = Path(filedir)
         self.filename = filename or datetime.now().strftime("%Y%m%dT%H%M%S") + ".log"
         self.log_file_path = self.filedir / self.filename
-        self.log_file = None  # 将在上下文管理器中打开
 
-    def __enter__(self):
-        """启动 Live 显示并打开日志文件，支持 with 上下文管理."""
+    def start(self):
+        """手动启动监控器"""
+        if self._live_started:
+            return
+            
         # 确保目录存在
         self.filedir.mkdir(parents=True, exist_ok=True)
         
         # 打开日志文件
-        self.log_file = open(self.log_file_path, "a", encoding="utf-8", buffering=-1)
+        self._log_file = open(self.log_file_path, "a", encoding="utf-8", buffering=-1)
         
         # 记录启动信息
-        self.log_file.write(f"================= Log started at {datetime.now().isoformat()} =================\n")
+        self._log_file.write(f"================= Log started at {datetime.now().isoformat()} =================\n")
         
         # 启动实时显示
         self.live.start()
         self._live_started = True
         self.start_time = datetime.now()
-        return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        """退出上下文时完成任务清理并输出最终结果."""
+    def stop(self, success: bool = True):
+        """手动停止监控器"""
+        if not self._live_started:
+            return
+            
         self.complete()
         self.live.refresh()
         self.live.stop()
@@ -100,18 +105,29 @@ class TaskProgressMonitor:
         print("\n".join(self.static_content))
         
         # 记录完成信息并关闭文件
-        if self.log_file:
-            self.log_file.write(f"================= Task completed at {datetime.now().isoformat()} =================\n")
-            self.log_file.write(f"================= Time Elapse: {str(self.end_time - self.start_time)} =================\n")
-            self.log_file.close()
-            self.log_file = None
+        if self._log_file:
+            self._log_file.write(f"================= Task completed at {datetime.now().isoformat()} =================\n")
+            self._log_file.write(f"================= Time Elapse: {str(self.end_time - self.start_time)} =================\n")
+            self._log_file.close()
+            self._log_file = None
         
         # 输出完成状态
-        if exc_type is None:
+        if success:
             print("[bold green]✓ Task Completed Successfully[/]")
         else:
-            print(f"[bold red]✗ Task Failed: {exc_value}[/]")
+            print("[bold red]✗ Task Failed[/]")
         print(f"[bold yellow] Time Elapse: {str(self.end_time - self.start_time)}[/]")
+        
+        self._live_started = False
+
+    def __enter__(self):
+        """支持 with 语句的上下文管理"""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """退出上下文时完成任务清理"""
+        self.stop(exc_type is None)
         return False
 
     def init_overall_task(self, title: str, total_phases: int, start_phase: int = 0):
@@ -124,7 +140,7 @@ class TaskProgressMonitor:
             start_phase (int): 初始已完成的阶段数，默认为 0。
         """
         if not self._live_started:
-            raise RuntimeError("Console must be used within a 'with' block")
+            raise RuntimeError("Monitor must be started first")
 
         if self.overall_task:
             self.progress.remove_task(self.overall_task)
@@ -147,7 +163,7 @@ class TaskProgressMonitor:
             total_tasks (int): 当前阶段的总任务数。
         """
         if not self._live_started:
-            raise RuntimeError("Console must be used within a 'with' block")
+            raise RuntimeError("Monitor must be started first")
         if total_tasks <= 0:
             raise ValueError("total_tasks must be a positive integer")
 
@@ -171,7 +187,7 @@ class TaskProgressMonitor:
             info (str): 需要显示在进度条旁的信息。
         """
         if not self._live_started:
-            raise RuntimeError("Console must be used within a 'with' block")
+            raise RuntimeError("Monitor must be started first")
 
         self.progress.update(self.subtask, advance=step, info=info)
         total_advance = step / self._subtask_total
@@ -183,7 +199,7 @@ class TaskProgressMonitor:
 
     def _log_to_file(self, message: str):
         """将信息记录到日志文件"""
-        if not self.log_file:
+        if not self._log_file:
             return
             
         timestamp = datetime.now().isoformat(timespec='seconds')
@@ -193,19 +209,19 @@ class TaskProgressMonitor:
         subtask_progress = f"{self._subtask_completed}/{self._subtask_total}"
         log_line = f"{timestamp} | {task_progress} | {subtask_progress} | {message}"
         
-        self.log_file.write(log_line + "\n")
+        self._log_file.write(log_line + "\n")
 
     def update_live_info(self, info: str):
         """更新实时信息面板内容并记录到日志文件."""
         if not self._live_started:
-            raise RuntimeError("Console must be used within a 'with' block")
+            raise RuntimeError("Monitor must be started first")
         self.layout["live_info"].update(Panel(info, padding=(0, 2), title=self.live_info_title))
         self._log_to_file(info)
 
     def update_static_info(self, info: str):
         """将信息追加到静态信息面板并记录到日志文件."""
         if not self._live_started:
-            raise RuntimeError("Console must be used within a 'with' block")
+            raise RuntimeError("Monitor must be started first")
         
         # 添加到静态内容（使用双端队列自动限制长度）
         self.static_content.append(info)
@@ -255,7 +271,7 @@ if __name__ == '__main__':
     task_num = 40
     subtask_num = 12
     
-    # 使用自定义配置
+    # 使用 with 语句的示例
     with TaskProgressMonitor() as monitor:
         monitor.init_overall_task('Processing', task_num)
         for i in range(task_num):
@@ -265,3 +281,18 @@ if __name__ == '__main__':
                 monitor.update_progress(step=1, info=f"Status: {j}")
                 monitor.update_live_info(f"Current task: {j}")
             monitor.update_static_info(f"Phase: {i} completed, total tasks: {task_num}")
+    
+    # 不使用 with 语句的示例
+    monitor = TaskProgressMonitor()
+    monitor.start()
+    try:
+        monitor.init_overall_task('Manual Processing', task_num)
+        for i in range(task_num):
+            monitor.init_subtask(f'Manual Phase {i}', subtask_num)
+            for j in range(subtask_num):
+                time.sleep(0.01)
+                monitor.update_progress(step=1, info=f"Status: {j}")
+                monitor.update_live_info(f"Manual task: {j}")
+            monitor.update_static_info(f"Manual Phase: {i} completed")
+    finally:
+        monitor.stop()
