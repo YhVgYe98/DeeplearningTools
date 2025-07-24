@@ -211,26 +211,25 @@ class TaskProgressMonitor:
         
         self._log_file.write(log_line + "\n")
 
-    def update_live_info(self, info: str):
+    def update_live_info(self, info: str, write_log: bool = True):
         """更新实时信息面板内容并记录到日志文件."""
         if not self._live_started:
             raise RuntimeError("Monitor must be started first")
         self.layout["live_info"].update(Panel(info, padding=(0, 2), title=self.live_info_title))
-        self._log_to_file(info)
+        if write_log:
+            self._log_to_file(info)
 
-    def update_static_info(self, info: str):
+    def update_static_info(self, info: str, write_log: bool = True):
         """将信息追加到静态信息面板并记录到日志文件."""
         if not self._live_started:
             raise RuntimeError("Monitor must be started first")
-        
         # 添加到静态内容（使用双端队列自动限制长度）
         self.static_content.append(info)
-        
         # 更新显示
         self.layout["static_info"].update(Panel(TailText(self.static_content), title=self.static_info_title))
-        
         # 记录日志
-        self._log_to_file(info)
+        if write_log:
+            self._log_to_file(info)
 
     def complete(self):
         """标记任务完成，清理进度条并更新状态提示."""
