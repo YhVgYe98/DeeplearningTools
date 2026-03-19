@@ -81,7 +81,7 @@ class TaskProgressMonitor:
         self.filedir.mkdir(parents=True, exist_ok=True)
         
         # 打开日志文件
-        self._log_file = open(self.log_file_path, "a", encoding="utf-8", buffering=-1)
+        self._log_file = open(self.log_file_path, "a", encoding="utf-8", buffering=1)
         
         # 记录启动信息
         self._log_file.write(f"================= Log started at {datetime.now().isoformat()} =================\n")
@@ -207,7 +207,8 @@ class TaskProgressMonitor:
         # 格式化任务进度信息
         task_progress = f"{self._overall_completed:.2f}/{self._overall_total}"
         subtask_progress = f"{self._subtask_completed}/{self._subtask_total}"
-        log_line = f"{timestamp} | {task_progress} | {subtask_progress} | {message}"
+        clean_message = Text.from_markup(message).plain
+        log_line = f"{timestamp} | {task_progress} | {subtask_progress} | {clean_message}"
         
         self._log_file.write(log_line + "\n")
 
@@ -261,7 +262,7 @@ class TailText:
         display_lines = list(self.text_deque)[-max_lines:]
         
         # 创建新的文本对象
-        clipped_text = Text("\n".join(display_lines))
+        clipped_text = Text.from_markup("\n".join(display_lines))
         yield clipped_text
 
 
@@ -278,7 +279,7 @@ if __name__ == '__main__':
             for j in range(subtask_num):
                 time.sleep(0.01)
                 monitor.update_progress(step=1, info=f"Status: {j}")
-                monitor.update_live_info(f"Current task: {j}")
+                monitor.update_live_info(f"Current task: {j}", False)
             monitor.update_static_info(f"Phase: {i} completed, total tasks: {task_num}")
     
     # 不使用 with 语句的示例
@@ -291,7 +292,7 @@ if __name__ == '__main__':
             for j in range(subtask_num):
                 time.sleep(0.01)
                 monitor.update_progress(step=1, info=f"Status: {j}")
-                monitor.update_live_info(f"Manual task: {j}")
+                monitor.update_live_info(f"Manual task: {j}", False)
             monitor.update_static_info(f"Manual Phase: {i} completed")
     finally:
         monitor.stop()
